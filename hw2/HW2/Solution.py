@@ -14,13 +14,13 @@ from Business.Apartment import Apartment
 # ---------------------------------- CRUD API: ----------------------------------
 
 def create_tables():
-    queries = ["CREATE TABLE Owner(Owner_ID INTEGER , Name TEXT, PRIMARY KEY(Owner_ID), CHECK(ID > 0));",
-               "CREATE TABLE Apartment(ID INTEGER, Address TEXT, City TEXT, Country TEXT, Size INTEGER,UNIQUE(City, Address) PRIMARY KEY(ID), CHECK(ID > 0));",
-               "CREATE TABLE Customer(Customer_ID INTEGER, Customer_name TEXT, PRIMARY KEY(Customer_ID), CHECK(ID > 0));",
+    queries = ["CREATE TABLE Owner(Owner_ID INTEGER , Name TEXT, PRIMARY KEY(Owner_ID), CHECK(Owner_ID > 0));",
+               "CREATE TABLE Apartment(ID INTEGER, Address TEXT, City TEXT, Country TEXT, Size INTEGER,UNIQUE(City, Address), PRIMARY KEY(ID), CHECK(ID > 0));",
+               "CREATE TABLE Customer(Customer_ID INTEGER, Customer_name TEXT, PRIMARY KEY(Customer_ID), CHECK(Customer_ID > 0));",
                "CREATE TABLE Owns(Owner_ID INTEGER, ID INTEGER, FOREIGN KEY(ID) REFERENCES Apartment(ID) ON DELETE CASCADE);",
                "CREATE TABLE Reserved(Customer_ID INTEGER, ID INTEGER, start_date DATE, end_date DATE, total_price FLOAT, FOREIGN KEY(ID) REFERENCES Apartment ON DELETE CASCADE, FOREIGN KEY(Customer_ID) REFERENCES Customer ON DELETE CASCADE);",
                "CREATE TABLE Reviewed(ID INTEGER, Customer_ID INTEGER, review_date DATE, rating INTEGER, review_text TEXT, FOREIGN KEY(ID) REFERENCES Apartment ON DELETE CASCADE, FOREIGN KEY(Customer_ID) REFERENCES Customer ON DELETE CASCADE);",
-               "CREATE VIEW Apartment_rating AS SELECT ID, AVG(rating) AS total_rating FROM Reviewed GROUPBY ID;"]
+               "CREATE VIEW Apartment_rating AS SELECT ID, AVG(rating) AS total_rating FROM Reviewed GROUP BY ID;"]
 
     conn = None
     try:
@@ -45,18 +45,103 @@ def create_tables():
         conn.close()
 
 def clear_tables():
-    # TODO: implement
-    pass
+    queries = ["DELETE FROM Owner;",
+               "DELETE FROM Apartment;",
+               "DELETE FROM Customer;",
+               "DELETE FROM Owns;",
+               "DELETE FROM Reserved;",
+               "DELETE FROM Reviewed;"]
+    queries.reverse()
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+        for query in queries:
+            conn.execute(query)
+
+    except DatabaseException.ConnectionInvalid as e:
+        print(e)
+    except DatabaseException.NOT_NULL_VIOLATION as e:
+        print(e)
+    except DatabaseException.CHECK_VIOLATION as e:
+        print(e)
+    except DatabaseException.UNIQUE_VIOLATION as e:
+        print(e)
+    except DatabaseException.FOREIGN_KEY_VIOLATION as e:
+        print(e)
+    except Exception as e:
+        print(e)
+    finally:
+        # will happen any way after try termination or exception handling
+        conn.close()
 
 
 def drop_tables():
-    # TODO: implement
-    pass
+    queries = ["DROP TABLE Owner;",
+               "DROP TABLE Apartment;",
+               "DROP TABLE Customer;",
+               "DROP TABLE Owns;",
+               "DROP TABLE Reserved;",
+               "DROP TABLE Reviewed;",
+               "DROP VIEW Apartment_rating;"]
+    queries.reverse()
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+        for query in queries:
+            conn.execute(query)
+
+    except DatabaseException.ConnectionInvalid as e:
+        print(e)
+    except DatabaseException.NOT_NULL_VIOLATION as e:
+        print(e)
+    except DatabaseException.CHECK_VIOLATION as e:
+        print(e)
+    except DatabaseException.UNIQUE_VIOLATION as e:
+        print(e)
+    except DatabaseException.FOREIGN_KEY_VIOLATION as e:
+        print(e)
+    except Exception as e:
+        print(e)
+    finally:
+        # will happen any way after try termination or exception handling
+        conn.close()
 
 
 def add_owner(owner: Owner) -> ReturnValue:
-    # TODO: implement
-    pass
+    #checks
+    if owner.get_owner_name() == None or owner.get_owner_id() == None:
+        return ReturnValue.BAD_PARAMS
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+        query = sql.SQL("INSERT INTO Owner VALUES({id}, {name})").format(id=sql.Literal(owner.get_owner_id()), name=sql.Literal(owner.get_owner_name()))
+        conn.execute(query)
+
+    except DatabaseException.ConnectionInvalid as e:
+        print(e)
+        return ReturnValue.ERROR
+    except DatabaseException.NOT_NULL_VIOLATION as e:
+        print(e)
+        return ReturnValue.ERROR
+    except DatabaseException.CHECK_VIOLATION as e:
+        print(e)
+        return ReturnValue.BAD_PARAMS
+    except DatabaseException.UNIQUE_VIOLATION as e:
+        print(e)
+        return ReturnValue.ALREADY_EXISTS
+    except DatabaseException.FOREIGN_KEY_VIOLATION as e:
+        print(e)
+        return ReturnValue.ERROR
+    except Exception as e:
+        print(e)
+        return ReturnValue.ERROR
+    finally:
+        # will happen any way after try termination or exception handling
+        conn.close()
+    return ReturnValue.OK
 
 
 def get_owner(owner_id: int) -> Owner:
@@ -85,8 +170,39 @@ def delete_apartment(apartment_id: int) -> ReturnValue:
 
 
 def add_customer(customer: Customer) -> ReturnValue:
-    # TODO: implement
-    pass
+    # checks
+    if customer.get_customer_name() == None or customer.get_customer_id() == None:
+        return ReturnValue.BAD_PARAMS
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+        query = sql.SQL("INSERT INTO Customer VALUES({id}, {name})").format(id=sql.Literal(customer.get_customer_id()),
+                                                                         name=sql.Literal(customer.get_customer_id()))
+        conn.execute(query)
+
+    except DatabaseException.ConnectionInvalid as e:
+        print(e)
+        return ReturnValue.ERROR
+    except DatabaseException.NOT_NULL_VIOLATION as e:
+        print(e)
+        return ReturnValue.ERROR
+    except DatabaseException.CHECK_VIOLATION as e:
+        print(e)
+        return ReturnValue.BAD_PARAMS
+    except DatabaseException.UNIQUE_VIOLATION as e:
+        print(e)
+        return ReturnValue.ALREADY_EXISTS
+    except DatabaseException.FOREIGN_KEY_VIOLATION as e:
+        print(e)
+        return ReturnValue.ERROR
+    except Exception as e:
+        print(e)
+        return ReturnValue.ERROR
+    finally:
+        # will happen any way after try termination or exception handling
+        conn.close()
+    return ReturnValue.OK
 
 
 def get_customer(customer_id: int) -> Customer:
