@@ -324,6 +324,7 @@ def customer_made_reservation(customer_id: int, apartment_id: int, start_date: d
 
 
 def customer_cancelled_reservation(customer_id: int, apartment_id: int, start_date: date) -> ReturnValue:
+
     # TODO: implement
     pass
 
