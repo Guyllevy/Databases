@@ -14,7 +14,7 @@ from Business.Apartment import Apartment
 # ---------------------------------- CRUD API: ----------------------------------
 
 def create_tables():
-    queries = ["CREATE TABLE Owner(Owner_ID INTEGER , Name TEXT, PRIMARY KEY(Owner_ID), CHECK(Owner_ID > 0));",
+    queries = ["CREATE TABLE Owner(Owner_ID INTEGER , Owner_name TEXT, PRIMARY KEY(Owner_ID), CHECK(Owner_ID > 0));",
                "CREATE TABLE Apartment(ID INTEGER, Address TEXT, City TEXT, Country TEXT, Size INTEGER,UNIQUE(City, Address), PRIMARY KEY(ID), CHECK(ID > 0));",
                "CREATE TABLE Customer(Customer_ID INTEGER, Customer_name TEXT, PRIMARY KEY(Customer_ID), CHECK(Customer_ID > 0));",
                "CREATE TABLE Owns(Owner_ID INTEGER, ID INTEGER, FOREIGN KEY(ID) REFERENCES Apartment(ID) ON DELETE CASCADE);",
@@ -28,21 +28,11 @@ def create_tables():
         for query in queries:
             conn.execute(query)
 
-    except DatabaseException.ConnectionInvalid as e:
-        print(e)
-    except DatabaseException.NOT_NULL_VIOLATION as e:
-        print(e)
-    except DatabaseException.CHECK_VIOLATION as e:
-        print(e)
-    except DatabaseException.UNIQUE_VIOLATION as e:
-        print(e)
-    except DatabaseException.FOREIGN_KEY_VIOLATION as e:
-        print(e)
     except Exception as e:
         print(e)
     finally:
-        # will happen any way after try termination or exception handling
         conn.close()
+
 
 def clear_tables():
     queries = ["DELETE FROM Owner;",
@@ -59,20 +49,9 @@ def clear_tables():
         for query in queries:
             conn.execute(query)
 
-    except DatabaseException.ConnectionInvalid as e:
-        print(e)
-    except DatabaseException.NOT_NULL_VIOLATION as e:
-        print(e)
-    except DatabaseException.CHECK_VIOLATION as e:
-        print(e)
-    except DatabaseException.UNIQUE_VIOLATION as e:
-        print(e)
-    except DatabaseException.FOREIGN_KEY_VIOLATION as e:
-        print(e)
     except Exception as e:
         print(e)
     finally:
-        # will happen any way after try termination or exception handling
         conn.close()
 
 
@@ -92,127 +71,217 @@ def drop_tables():
         for query in queries:
             conn.execute(query)
 
-    except DatabaseException.ConnectionInvalid as e:
-        print(e)
-    except DatabaseException.NOT_NULL_VIOLATION as e:
-        print(e)
-    except DatabaseException.CHECK_VIOLATION as e:
-        print(e)
-    except DatabaseException.UNIQUE_VIOLATION as e:
-        print(e)
-    except DatabaseException.FOREIGN_KEY_VIOLATION as e:
-        print(e)
     except Exception as e:
         print(e)
     finally:
-        # will happen any way after try termination or exception handling
         conn.close()
 
 
 def add_owner(owner: Owner) -> ReturnValue:
-    #checks
-    if owner.get_owner_name() == None or owner.get_owner_id() == None:
+    # checks
+    if owner.get_owner_name() is None or owner.get_owner_id() is None:
         return ReturnValue.BAD_PARAMS
 
     conn = None
     try:
         conn = Connector.DBConnector()
-        query = sql.SQL("INSERT INTO Owner VALUES({id}, {name})").format(id=sql.Literal(owner.get_owner_id()), name=sql.Literal(owner.get_owner_name()))
-        conn.execute(query)
+        query = sql.SQL("INSERT INTO Owner VALUES({id}, {name})").format(id=sql.Literal(owner.get_owner_id()),
+                                                                         name=sql.Literal(owner.get_owner_name()))
+        rows_affected, _ = conn.execute(query)
+        if rows_affected != 1:
+            return ReturnValue.ERROR
 
-    except DatabaseException.ConnectionInvalid as e:
-        print(e)
-        return ReturnValue.ERROR
-    except DatabaseException.NOT_NULL_VIOLATION as e:
-        print(e)
-        return ReturnValue.ERROR
     except DatabaseException.CHECK_VIOLATION as e:
         print(e)
         return ReturnValue.BAD_PARAMS
     except DatabaseException.UNIQUE_VIOLATION as e:
         print(e)
         return ReturnValue.ALREADY_EXISTS
-    except DatabaseException.FOREIGN_KEY_VIOLATION as e:
-        print(e)
-        return ReturnValue.ERROR
     except Exception as e:
         print(e)
         return ReturnValue.ERROR
     finally:
-        # will happen any way after try termination or exception handling
         conn.close()
     return ReturnValue.OK
 
 
 def get_owner(owner_id: int) -> Owner:
-    # TODO: implement
-    pass
+    owner = Owner.bad_owner()
+
+    if owner_id <= 0 or owner_id is None:
+        return owner
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+        query = sql.SQL("SELECT * FROM Owner WHERE Owner_ID = {id}").format(id=sql.Literal(owner_id))
+        _, result = conn.execute(query)
+        if result.size() == 1:
+            owner = Owner(**result[0])
+    except Exception as e:
+        print(e)
+    finally:
+        conn.close()
+    return owner
 
 
 def delete_owner(owner_id: int) -> ReturnValue:
-    # TODO: implement
-    pass
+    if owner_id <= 0 or owner_id is None:
+        return ReturnValue.BAD_PARAMS
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+        query = sql.SQL("DELETE FROM Owner WHERE Owner_ID = {id}").format(id=sql.Literal(owner_id))
+        rows_affected, _ = conn.execute(query)
+        if rows_affected == 0:
+            return ReturnValue.NOT_EXISTS
+    except Exception as e:
+        print(e)
+        return ReturnValue.ERROR
+    finally:
+        conn.close()
+    return ReturnValue.OK
 
 
 def add_apartment(apartment: Apartment) -> ReturnValue:
-    # TODO: implement
-    pass
+    # checks
+    if None in [apartment.get_id(), apartment.get_address(),
+                apartment.get_city(), apartment.get_country(), apartment.get_size()]:
+        return ReturnValue.BAD_PARAMS
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+        query = sql.SQL("INSERT INTO Apartment VALUES({id}, {address}, {city}, {country}, {size})").format(
+            id=sql.Literal(apartment.get_id()),
+            address=sql.Literal(apartment.get_address()),
+            city=sql.Literal(apartment.get_city()),
+            country=sql.Literal(apartment.get_country()),
+            size=sql.Literal(apartment.get_size()))
+        rows_affected, _ = conn.execute(query)
+        if rows_affected != 1:
+            return ReturnValue.ERROR
+
+    except DatabaseException.CHECK_VIOLATION as e:
+        print(e)
+        return ReturnValue.BAD_PARAMS
+    except DatabaseException.UNIQUE_VIOLATION as e:
+        print(e)
+        return ReturnValue.ALREADY_EXISTS
+    except Exception as e:
+        print(e)
+        return ReturnValue.ERROR
+    finally:
+        conn.close()
+    return ReturnValue.OK
 
 
 def get_apartment(apartment_id: int) -> Apartment:
-    # TODO: implement
-    pass
+    apartment = Apartment.bad_apartment()
+
+    if apartment_id <= 0 or apartment_id is None:
+        return apartment
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+        query = sql.SQL("SELECT * FROM Apartment WHERE ID = {id}").format(id=sql.Literal(apartment_id))
+        _, result = conn.execute(query)
+        if result.size() == 1:
+            apartment = Apartment(**result[0])
+
+    except Exception as e:
+        print(e)
+    finally:
+        conn.close()
+    return apartment
 
 
 def delete_apartment(apartment_id: int) -> ReturnValue:
-    # TODO: implement
-    pass
+    if apartment_id <= 0 or apartment_id is None:
+        return ReturnValue.BAD_PARAMS
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+        query = sql.SQL("DELETE FROM Apartment WHERE ID = {id}").format(id=sql.Literal(apartment_id))
+        rows_affected, _ = conn.execute(query)
+        if rows_affected == 0:
+            return ReturnValue.NOT_EXISTS
+    except Exception as e:
+        print(e)
+        return ReturnValue.ERROR
+    finally:
+        conn.close()
+    return ReturnValue.OK
 
 
 def add_customer(customer: Customer) -> ReturnValue:
     # checks
-    if customer.get_customer_name() == None or customer.get_customer_id() == None:
+    if customer.get_customer_name() is None or customer.get_customer_id() is None:
         return ReturnValue.BAD_PARAMS
 
     conn = None
     try:
         conn = Connector.DBConnector()
         query = sql.SQL("INSERT INTO Customer VALUES({id}, {name})").format(id=sql.Literal(customer.get_customer_id()),
-                                                                         name=sql.Literal(customer.get_customer_id()))
-        conn.execute(query)
+                                                                            name=sql.Literal(
+                                                                                customer.get_customer_name()))
+        rows_affected, _ = conn.execute(query)
+        if rows_affected != 1:
+            return ReturnValue.ERROR
 
-    except DatabaseException.ConnectionInvalid as e:
-        print(e)
-        return ReturnValue.ERROR
-    except DatabaseException.NOT_NULL_VIOLATION as e:
-        print(e)
-        return ReturnValue.ERROR
     except DatabaseException.CHECK_VIOLATION as e:
         print(e)
         return ReturnValue.BAD_PARAMS
     except DatabaseException.UNIQUE_VIOLATION as e:
         print(e)
         return ReturnValue.ALREADY_EXISTS
-    except DatabaseException.FOREIGN_KEY_VIOLATION as e:
-        print(e)
-        return ReturnValue.ERROR
     except Exception as e:
         print(e)
         return ReturnValue.ERROR
     finally:
-        # will happen any way after try termination or exception handling
         conn.close()
     return ReturnValue.OK
 
 
 def get_customer(customer_id: int) -> Customer:
-    # TODO: implement
-    pass
+    customer = Customer.bad_customer()
+
+    if customer_id <= 0 or customer_id is None:
+        return customer
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+        query = sql.SQL("SELECT * FROM Customer WHERE Customer_ID = {id}").format(id=sql.Literal(customer_id))
+        _, result = conn.execute(query)
+
+        if result.size() == 1:
+            customer = Customer(**result[0])
+
+    except Exception as e:
+        print(e)
+    finally:
+        conn.close()
+    return customer
 
 
 def delete_customer(customer_id: int) -> ReturnValue:
-    # TODO: implement
-    pass
+    if customer_id <= 0 or customer_id is None:
+        return ReturnValue.BAD_PARAMS
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+        query = sql.SQL("DELETE FROM Customer WHERE Customer_ID = {id}").format(id=sql.Literal(customer_id))
+        rows_affected, _ = conn.execute(query)
+        if rows_affected == 0:
+            return ReturnValue.NOT_EXISTS
+    except Exception as e:
+        print(e)
+        return ReturnValue.ERROR
+    finally:
+        conn.close()
+    return ReturnValue.OK
 
 
 def customer_made_reservation(customer_id: int, apartment_id: int, start_date: date, end_date: date,
@@ -256,7 +325,7 @@ def get_owner_apartments(owner_id: int) -> List[Apartment]:
 
 def get_apartment_rating(apartment_id: int) -> float:
     # TODO: implement
-    #SELECT Avg(rating) FROM review R WHERE R.ID = {apartment id}
+    # SELECT Avg(rating) FROM review R WHERE R.ID = {apartment id}
     pass
 
 
