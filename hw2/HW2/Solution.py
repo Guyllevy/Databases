@@ -286,8 +286,41 @@ def delete_customer(customer_id: int) -> ReturnValue:
 
 def customer_made_reservation(customer_id: int, apartment_id: int, start_date: date, end_date: date,
                               total_price: float) -> ReturnValue:
-    # TODO: implement
-    pass
+    if customer_id <= 0 or customer_id is None or apartment_id <= 0 or apartment_id is None or total_price <= 0\
+            or start_date is None or end_date is None or total_price is None:
+        return ReturnValue.BAD_PARAMS
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+
+        query = sql.SQL("INSERT INTO Reserved "+
+                        "SELECT {customer_id}, {apartment_id}, {start_date}, {end_date}, {total_price} " +
+                        "WHERE NOT EXISTS (SELECT 1 FROM Reserved AS R " +
+                            "WHERE R.id = {apartment_id} AND (" +
+                                "(R.start_date BETWEEN {start_date} AND {end_date}) " +
+                                "OR (R.end_date BETWEEN {start_date} AND {end_date}) " +
+                                    "OR (R.start_date < {start_date} AND R.end_date > {end_date})));").format(
+                                    customer_id=sql.Literal(customer_id),
+                                    apartment_id=sql.Literal(apartment_id),
+                                    start_date=sql.Literal(start_date.strftime('%Y-%m-%d')),
+                                    end_date=sql.Literal(end_date.strftime('%Y-%m-%d')),
+                                    total_price=sql.Literal(total_price))
+        rows_affected, _ = conn.execute(query)
+        if rows_affected == 0:
+            return ReturnValue.BAD_PARAMS
+
+    except DatabaseException.FOREIGN_KEY_VIOLATION as e:
+        print(e)
+        return ReturnValue.NOT_EXISTS
+    except Exception as e:
+        print(e)
+        return ReturnValue.ERROR
+
+    finally:
+        conn.close()
+    return ReturnValue.OK
+
 
 
 def customer_cancelled_reservation(customer_id: int, apartment_id: int, start_date: date) -> ReturnValue:
