@@ -19,7 +19,7 @@ def create_tables():
                "CREATE TABLE Customer(Customer_ID INTEGER, Customer_name TEXT, PRIMARY KEY(Customer_ID), CHECK(Customer_ID > 0));",
                "CREATE TABLE Owns(Owner_ID INTEGER, ID INTEGER, FOREIGN KEY(ID) REFERENCES Apartment(ID) ON DELETE CASCADE);",
                "CREATE TABLE Reserved(Customer_ID INTEGER, ID INTEGER, start_date DATE, end_date DATE, total_price FLOAT, FOREIGN KEY(ID) REFERENCES Apartment ON DELETE CASCADE, FOREIGN KEY(Customer_ID) REFERENCES Customer ON DELETE CASCADE);",
-               "CREATE TABLE Reviewed(ID INTEGER, Customer_ID INTEGER, review_date DATE, rating INTEGER, review_text TEXT, FOREIGN KEY(ID) REFERENCES Apartment ON DELETE CASCADE, FOREIGN KEY(Customer_ID) REFERENCES Customer ON DELETE CASCADE);",
+               "CREATE TABLE Reviewed(ID INTEGER, Customer_ID INTEGER, review_date DATE, rating INTEGER, review_text TEXT, PRIMARY KEY(ID, Customer_ID), FOREIGN KEY(ID) REFERENCES Apartment ON DELETE CASCADE, FOREIGN KEY(Customer_ID) REFERENCES Customer ON DELETE CASCADE);",
                "CREATE VIEW Apartment_rating AS SELECT ID, AVG(rating) AS total_rating FROM Reviewed GROUP BY ID;"]
 
     conn = None
@@ -286,7 +286,7 @@ def delete_customer(customer_id: int) -> ReturnValue:
 
 def customer_made_reservation(customer_id: int, apartment_id: int, start_date: date, end_date: date,
                               total_price: float) -> ReturnValue:
-    if customer_id <= 0 or customer_id is None or apartment_id <= 0 or apartment_id is None or total_price <= 0\
+    if customer_id <= 0 or customer_id is None or apartment_id <= 0 or apartment_id is None or total_price <= 0 \
             or start_date is None or end_date is None or total_price is None:
         return ReturnValue.BAD_PARAMS
 
@@ -294,18 +294,18 @@ def customer_made_reservation(customer_id: int, apartment_id: int, start_date: d
     try:
         conn = Connector.DBConnector()
 
-        query = sql.SQL("INSERT INTO Reserved "+
+        query = sql.SQL("INSERT INTO Reserved " +
                         "SELECT {customer_id}, {apartment_id}, {start_date}, {end_date}, {total_price} " +
                         "WHERE NOT EXISTS (SELECT 1 FROM Reserved AS R " +
-                            "WHERE R.id = {apartment_id} AND (" +
-                                "(R.start_date BETWEEN {start_date} AND {end_date}) " +
-                                "OR (R.end_date BETWEEN {start_date} AND {end_date}) " +
-                                    "OR (R.start_date < {start_date} AND R.end_date > {end_date})));").format(
-                                    customer_id=sql.Literal(customer_id),
-                                    apartment_id=sql.Literal(apartment_id),
-                                    start_date=sql.Literal(start_date.strftime('%Y-%m-%d')),
-                                    end_date=sql.Literal(end_date.strftime('%Y-%m-%d')),
-                                    total_price=sql.Literal(total_price))
+                        "WHERE R.id = {apartment_id} AND (" +
+                        "(R.start_date BETWEEN {start_date} AND {end_date}) " +
+                        "OR (R.end_date BETWEEN {start_date} AND {end_date}) " +
+                        "OR (R.start_date < {start_date} AND R.end_date > {end_date})));").format(
+            customer_id=sql.Literal(customer_id),
+            apartment_id=sql.Literal(apartment_id),
+            start_date=sql.Literal(start_date.strftime('%Y-%m-%d')),
+            end_date=sql.Literal(end_date.strftime('%Y-%m-%d')),
+            total_price=sql.Literal(total_price))
         rows_affected, _ = conn.execute(query)
         if rows_affected == 0:
             return ReturnValue.BAD_PARAMS
@@ -322,17 +322,101 @@ def customer_made_reservation(customer_id: int, apartment_id: int, start_date: d
     return ReturnValue.OK
 
 
-
 def customer_cancelled_reservation(customer_id: int, apartment_id: int, start_date: date) -> ReturnValue:
+    if customer_id <= 0 or customer_id is None or apartment_id <= 0 or apartment_id is None or start_date is None:
+        return ReturnValue.BAD_PARAMS
 
-    # TODO: implement
-    pass
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+        query = sql.SQL("DELETE FROM Reserved WHERE " +
+                        "Customer_ID = {customer_id} AND ID = {apartment_id} AND start_date = {start_date}").format(
+                            customer_id=(sql.Literal(customer_id)),
+                            apartment_id=(sql.Literal(apartment_id)),
+                            start_date=sql.Literal(start_date.strftime('%Y-%m-%d')))
+        rows_affected, _ = conn.execute(query)
+        if rows_affected == 0:
+            return ReturnValue.NOT_EXISTS
+    except Exception as e:
+        print(e)
+        return ReturnValue.ERROR
+    finally:
+        conn.close()
+    return ReturnValue.OK
 
 
 def customer_reviewed_apartment(customer_id: int, apartment_id: int, review_date: date, rating: int,
                                 review_text: str) -> ReturnValue:
-    # TODO: implement
-    pass
+    if (customer_id <= 0 or apartment_id <= 0 or customer_id is None or apartment_id is None
+            or review_date is None or review_text is None or rating < 1 or rating > 10 or rating is None):
+        return ReturnValue.BAD_PARAMS
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+
+        query = sql.SQL("INSERT INTO Reviewed " +
+                        "SELECT {apartment_id}, {customer_id}, {review_date}, {rating}, {review_text} " +
+                        "WHERE EXISTS (SELECT 1 FROM Reserved AS R " +
+                        "WHERE R.id = {apartment_id} AND R.Customer_ID = {customer_id} " +
+                        "AND R.end_date < {review_date})").format(
+                            customer_id=sql.Literal(customer_id),
+                            apartment_id=sql.Literal(apartment_id),
+                            review_date=sql.Literal(review_date.strftime('%Y-%m-%d')),
+                            rating=sql.Literal(rating),
+                            review_text=sql.Literal(review_text))
+        rows_affected, _ = conn.execute(query)
+        if rows_affected == 0:
+            # where the reviewer didn't reserve the apartment on time
+            return ReturnValue.NOT_EXISTS
+
+    except DatabaseException.FOREIGN_KEY_VIOLATION as e:
+        # where customer or apartment not exist
+        print(e)
+        return ReturnValue.NOT_EXISTS
+    except DatabaseException.UNIQUE_VIOLATION as e:
+        # where customer already reviewed the apartment
+        print(e)
+        return ReturnValue.ALREADY_EXISTS
+    except Exception as e:
+        print(e)
+        return ReturnValue.ERROR
+
+    finally:
+        conn.close()
+    return ReturnValue.OK
+
+
+def customer_updated_review(customer_id: int, apartment_id: int, update_date: date,
+                            new_rating: int, new_text: str) -> ReturnValue:
+    if (customer_id <= 0 or apartment_id <= 0 or customer_id is None or apartment_id is None
+            or update_date is None or new_text is None or new_rating < 1 or new_rating > 10 or new_rating is None):
+        return ReturnValue.BAD_PARAMS
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+
+        query = sql.SQL("UPDATE Reviewed " +
+                        "SET review_date = {update_date}, rating = {new_rating}, review_text = {new_text} " +
+                        "WHERE id = {apartment_id} AND Customer_ID = {customer_id} " +
+                        "AND review_date < {update_date}").format(
+                            customer_id=sql.Literal(customer_id),
+                            apartment_id=sql.Literal(apartment_id),
+                            update_date=sql.Literal(update_date.strftime('%Y-%m-%d')),
+                            new_rating=sql.Literal(new_rating),
+                            new_text=sql.Literal(new_text))
+        rows_affected, _ = conn.execute(query)
+        if rows_affected == 0:
+            return ReturnValue.NOT_EXISTS
+    except Exception as e:
+        print(e)
+        return ReturnValue.ERROR
+
+    finally:
+        conn.close()
+    return ReturnValue.OK
+
 
 
 def owner_owns_apartment(owner_id: int, apartment_id: int) -> ReturnValue:
