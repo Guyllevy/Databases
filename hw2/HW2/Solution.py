@@ -15,12 +15,12 @@ from Business.Apartment import Apartment
 
 def create_tables():
     queries = ["CREATE TABLE Owner(Owner_ID INTEGER , Owner_name TEXT, PRIMARY KEY(Owner_ID), CHECK(Owner_ID > 0));",
-               "CREATE TABLE Apartment(ID INTEGER, Address TEXT, City TEXT, Country TEXT, Size INTEGER,UNIQUE(City, Address), PRIMARY KEY(ID), CHECK(ID > 0));",
+               "CREATE TABLE Apartment(ID INTEGER, Address TEXT, City TEXT, Country TEXT, Size INTEGER, UNIQUE(City, Address), PRIMARY KEY(ID), CHECK(ID > 0));",
                "CREATE TABLE Customer(Customer_ID INTEGER, Customer_name TEXT, PRIMARY KEY(Customer_ID), CHECK(Customer_ID > 0));",
-               "CREATE TABLE Owns(Owner_ID INTEGER, ID INTEGER, FOREIGN KEY(ID) REFERENCES Apartment(ID) ON DELETE CASCADE);",
+               "CREATE TABLE Owns(Owner_ID INTEGER, ID INTEGER, PRIMARY KEY(ID) ,FOREIGN KEY(ID) REFERENCES Apartment(ID) ON DELETE CASCADE, FOREIGN KEY(Owner_ID) REFERENCES Owner ON DELETE CASCADE);",
                "CREATE TABLE Reserved(Customer_ID INTEGER, ID INTEGER, start_date DATE, end_date DATE, total_price FLOAT, FOREIGN KEY(ID) REFERENCES Apartment ON DELETE CASCADE, FOREIGN KEY(Customer_ID) REFERENCES Customer ON DELETE CASCADE);",
                "CREATE TABLE Reviewed(ID INTEGER, Customer_ID INTEGER, review_date DATE, rating INTEGER, review_text TEXT, PRIMARY KEY(ID, Customer_ID), FOREIGN KEY(ID) REFERENCES Apartment ON DELETE CASCADE, FOREIGN KEY(Customer_ID) REFERENCES Customer ON DELETE CASCADE);",
-               "CREATE VIEW Apartment_rating AS SELECT ID, AVG(rating) AS total_rating FROM Reviewed GROUP BY ID;"]
+               "CREATE VIEW Apartment_Rating AS (SELECT ID, AVG(rating) AS average_rating FROM Reviewed GROUP BY ID);"]
 
     conn = None
     try:
@@ -420,36 +420,178 @@ def customer_updated_review(customer_id: int, apartment_id: int, update_date: da
 
 
 def owner_owns_apartment(owner_id: int, apartment_id: int) -> ReturnValue:
-    # TODO: implement
-    pass
 
+    if owner_id <= 0 or apartment_id <= 0 or owner_id is None or apartment_id is None:
+        return ReturnValue.BAD_PARAMS
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+
+        query = sql.SQL("INSERT INTO Owns " +
+                        "SELECT {owner_id}, {apartment_id}").format(
+                            owner_id=sql.Literal(owner_id),
+                            apartment_id=sql.Literal(apartment_id))
+        rows_affected, _ = conn.execute(query)
+        if rows_affected == 0:
+            return ReturnValue.ALREADY_EXISTS
+
+    except DatabaseException.FOREIGN_KEY_VIOLATION as e:
+        # where owner or apartment not exist
+        print(e)
+        return ReturnValue.NOT_EXISTS
+    except DatabaseException.UNIQUE_VIOLATION as e:
+        # where apartment is already owned
+        print(e)
+        return ReturnValue.ALREADY_EXISTS
+    except Exception as e:
+        print(e)
+        return ReturnValue.ERROR
+
+    finally:
+        conn.close()
+    return ReturnValue.OK
 
 def owner_doesnt_own_apartment(owner_id: int, apartment_id: int) -> ReturnValue:
-    # TODO: implement
-    pass
+    if owner_id <= 0 or apartment_id <= 0 or owner_id is None or apartment_id is None:
+        return ReturnValue.BAD_PARAMS
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+
+        query = sql.SQL("DELETE FROM Owns " +
+                        "WHERE id = {apartment_id} AND Owner_id = {owner_id}").format(
+                        owner_id=sql.Literal(owner_id),
+                        apartment_id=sql.Literal(apartment_id))
+        rows_affected, _ = conn.execute(query)
+        if rows_affected == 0:
+            return ReturnValue.NOT_EXISTS
+
+    except Exception as e:
+        print(e)
+        return ReturnValue.ERROR
+
+    finally:
+        conn.close()
+    return ReturnValue.OK
 
 
 def get_apartment_owner(apartment_id: int) -> Owner:
-    # TODO: implement
-    pass
+    returned_owner = Owner.bad_owner()
+
+    if apartment_id <= 0 or apartment_id is None:
+        return returned_owner
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+
+        query = sql.SQL("SELECT * FROM Owner O " +
+                        "WHERE EXISTS (SELECT 1 FROM Owns " +
+                        "WHERE id = {apartment_id} AND O.Owner_ID = Owner_ID)").format(
+                        apartment_id=sql.Literal(apartment_id))
+
+        _, result = conn.execute(query)
+
+        if result.size() == 1:
+            returned_owner = Owner(**result[0])
+
+    except Exception as e:
+        print(e)
+
+    finally:
+        conn.close()
+    return returned_owner
+
+
 
 
 def get_owner_apartments(owner_id: int) -> List[Apartment]:
-    # TODO: implement
-    pass
+    apartments_list = []
+
+    if owner_id <= 0 or owner_id is None:
+        return apartments_list
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+
+        query = sql.SQL("SELECT * FROM Apartment AP " +
+                        "WHERE EXISTS (SELECT 1 FROM Owns " +
+                        "WHERE id = AP.id AND Owner_ID = {owner_id})").format(
+                        owner_id=sql.Literal(owner_id))
+
+        _, result = conn.execute(query)
+
+        apartments_list = [Apartment(**apartment) for apartment in result]
+
+    except Exception as e:
+        print(e)
+
+    finally:
+        conn.close()
+    return apartments_list
+
 
 
 # ---------------------------------- BASIC API: ----------------------------------
 
 def get_apartment_rating(apartment_id: int) -> float:
-    # TODO: implement
-    # SELECT Avg(rating) FROM review R WHERE R.ID = {apartment id}
-    pass
+    average = 0
+
+    if apartment_id <= 0 or apartment_id is None:
+        return average
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+
+        query = sql.SQL("SELECT average_rating FROM Apartment_Rating " +
+                        "WHERE id = {apartment_id}").format(
+                        apartment_id=sql.Literal(apartment_id))
+
+        _, result = conn.execute(query)
+        print("Came Here")
+        print(result)
+        if result.size() == 1:
+            average = result[0]["average_rating"]
+            print("Came Here")
+
+    except Exception as e:
+        print(e)
+
+    finally:
+        conn.close()
+    return average
 
 
 def get_owner_rating(owner_id: int) -> float:
-    # TODO: implement
-    pass
+    average = 0
+
+    if owner_id <= 0 or owner_id is None:
+        return average
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+
+        query = sql.SQL("SELECT AVG(average_rating) AS owner_rating FROM Apartment_Rating AR " +
+                        "WHERE EXISTS (SELECT 1 FROM Owns " +
+                        "WHERE id = AR.id AND owner_id = {owner_id})").format(
+                        owner_id=sql.Literal(owner_id))
+
+        _, result = conn.execute(query)
+
+        if result.size() == 1:
+            average = result[0]["owner_rating"]
+
+    except Exception as e:
+        print(e)
+
+    finally:
+        conn.close()
+    return average
 
 
 def get_top_customer() -> Customer:
