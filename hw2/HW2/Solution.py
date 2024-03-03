@@ -20,7 +20,8 @@ def create_tables():
                "CREATE TABLE Owns(Owner_ID INTEGER, ID INTEGER, PRIMARY KEY(ID) ,FOREIGN KEY(ID) REFERENCES Apartment(ID) ON DELETE CASCADE, FOREIGN KEY(Owner_ID) REFERENCES Owner ON DELETE CASCADE);",
                "CREATE TABLE Reserved(Customer_ID INTEGER, ID INTEGER, start_date DATE, end_date DATE, total_price FLOAT, FOREIGN KEY(ID) REFERENCES Apartment ON DELETE CASCADE, FOREIGN KEY(Customer_ID) REFERENCES Customer ON DELETE CASCADE);",
                "CREATE TABLE Reviewed(ID INTEGER, Customer_ID INTEGER, review_date DATE, rating INTEGER, review_text TEXT, PRIMARY KEY(ID, Customer_ID), FOREIGN KEY(ID) REFERENCES Apartment ON DELETE CASCADE, FOREIGN KEY(Customer_ID) REFERENCES Customer ON DELETE CASCADE);",
-               "CREATE VIEW Apartment_Rating AS (SELECT ID, AVG(rating) AS average_rating FROM Reviewed GROUP BY ID);"]
+               "CREATE VIEW Apartment_Rating AS (SELECT ID, AVG(rating) AS average_rating FROM Reviewed GROUP BY ID);",
+               "CREATE VIEW Customer_reservations AS SELECT C.Customer_id, C.Customer_name, COUNT(R.start_date) AS num_reservations FROM Customer C LEFT OUTER JOIN Reserved R ON C.Customer_id = R.Customer_id GROUP BY C.Customer_id, C.Customer_name;"]
 
     conn = None
     try:
@@ -62,7 +63,8 @@ def drop_tables():
                "DROP TABLE Owns;",
                "DROP TABLE Reserved;",
                "DROP TABLE Reviewed;",
-               "DROP VIEW Apartment_rating;"]
+               "DROP VIEW Apartment_rating;",
+               "DROP VIEW Customer_reservations;"]
     queries.reverse()
 
     conn = None
@@ -595,13 +597,58 @@ def get_owner_rating(owner_id: int) -> float:
 
 
 def get_top_customer() -> Customer:
-    # TODO: implement
-    pass
+    customer = Customer.bad_customer()
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+
+        query = sql.SQL("SELECT Customer_id, Customer_name " +
+                        "FROM Customer_reservations " +
+                        "WHERE num_reservations = (SELECT MAX(num_reservations) FROM Customer_reservations) " +
+                        "ORDER BY Customer_id " +
+                        "LIMIT 1;").format()
+
+        _, result = conn.execute(query)
+        if result.size() == 1:
+            customer = Customer(**result[0])
+
+    except Exception as e:
+        print(e)
+
+    finally:
+        conn.close()
+    return customer
 
 
 def reservations_per_owner() -> List[Tuple[str, int]]:
-    # TODO: implement
-    pass
+    result_list = []
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+
+        # total number of reservations to apartments of each owner
+        query = sql.SQL("SELECT O.Owner_id, Owner_name, COUNT(R.start_date) AS num_reservations " +
+                        "FROM Owner O " +
+                        "LEFT OUTER JOIN Owns A ON O.Owner_id = A.Owner_id " +
+                        "LEFT OUTER JOIN Reserved R ON A.ID = R.ID " +
+                        "GROUP BY O.Owner_id, Owner_name;").format()
+
+        _, result = conn.execute(query)
+
+        if result.size() < 1:
+            return result_list
+        else:
+            for row in result:
+                result_list.append((row["Owner_name"], row["num_reservations"]))
+
+    except Exception as e:
+        print(e)
+
+    finally:
+        conn.close()
+
+    return result_list
 
 
 # ---------------------------------- ADVANCED API: ----------------------------------
@@ -612,8 +659,19 @@ def get_all_location_owners() -> List[Owner]:
 
 
 def best_value_for_money() -> Apartment:
-    # TODO: implement
+    # value for money of a given apartment is calculated as follows:
+    # the regular average of all review scores
+
+    # review score is calculated as follows:
+    # rating / [total_price / (end_date - start_date)]
+
+    # idea:
+    # create view of reservations and their reviews (how the fuck?)
+
+    # query the following : the apartment (id and name) that maximized avg(score) on its reviews
     pass
+
+
 
 
 def profit_per_month(year: int) -> List[Tuple[int, float]]:
