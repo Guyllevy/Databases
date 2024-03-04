@@ -707,7 +707,9 @@ def get_apartment_recommendation(customer_id: int) -> List[Tuple[Apartment, floa
     # say C is the customer we want to give recommendations to.
     # for every customer which is not C.
     # if they have a common apartment which they rated : we consider the ratio (average of ratios) of their ratings
-    #
+    # then for every apartment A not already reviewed by C, but reviewed by some other customer with now known ratio,
+    # we approximate the rating of A using costumer OC by multiplying OC_rating by the ratio C/OC
+    # this potentially gives multiple approximations per apartment so we average over that
     #
     #
     # a1 -> reviewed by C - 10, c2 - 5, c3 - 7
@@ -726,21 +728,31 @@ def get_apartment_recommendation(customer_id: int) -> List[Tuple[Apartment, floa
     # view (Rating_Ratios) of customer pairs that have reviewed
     # a common apartment, and the (average) ratio of their ratings
     #
-    # query apartment A, customer CO, Other_rating OT such that C,CO in Rating_Ratios and CO rated A as rating OT
-    # calculate for each row the approx from A,CO,OT of the rating C would give A (i.e. OT * ratio)
-    # group by apartments to average those approximations
+    # query apartments, ratios , reviews for each apartment and its average approx by
+    #
+    #
 
     # CREATE VIEW Rating_Ratios AS
     # SELECT R1.ID AS cid1 , R2.ID AS cid2, AVG(R1.rating/R2.rating) AS ratio
-    # FROM Reviewed R1 JOIN Reviewed R2 ON R1.ID = R2.ID
+    # FROM Reviewed R1, Reviewed R2
+    # WHERE R1.ID != R2.ID
     # GROUP BY R1.ID, R2.ID
     #
     # query ({Customer_id})
-    # SELECT A.ID, AVG(RR.ratio * RE.rating) AS approx
-    # FROM Rating_Ratios RR JOIN Reviewed RE ON RR.cid2 = RE.Customer_id  ##(cid1,cid2,ratio),(Customer_id,ID,rating)
-    # WHERE RE.Customer_id != {Customer_id}
-    # AND EXISTS (SELECT * FROM Rating_Ratios AS RR WHERE RR.C1 = {Customer_id})
-    # GROUP BY A.ID
+    # SELECT A.ID, Address, City, Country, Size, AVG(RR.ratio * RE.rating) AS approx
+    # FROM Apartment A
+    # JOIN Reviewed RE ON A.ID = RE.ID
+    # JOIN Rating_Ratios RR ON RR.cid2 = RE.Customer_id
+    # WHERE RR.cid1 = {Customer_id}
+    # AND EXISTS (SELECT * FROM RR WHERE RR.cid1 = {Customer_id})
+    # AND RE.Customer_id != {Customer_id}
+    # GROUP BY A.ID, Address, City, Country, Size
     #
+    # the join looks like (cid1, cid2, ratio, rating, apartment)
+    # where cid1 is our customer of interest
+    #       cid2 is all customers which we have a ratio for
+    #       apartment is that an apartment that cid2 reviewed
+    #       ratio is the average ratio cid1/cid2 ratings
+    #       rating is the rating of apartment by cid2
 
     pass
