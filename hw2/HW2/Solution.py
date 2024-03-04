@@ -22,8 +22,8 @@ def create_tables():
                "CREATE TABLE Reviewed(ID INTEGER, Customer_ID INTEGER, review_date DATE, rating INTEGER, review_text TEXT, PRIMARY KEY(ID, Customer_ID), FOREIGN KEY(ID) REFERENCES Apartment ON DELETE CASCADE, FOREIGN KEY(Customer_ID) REFERENCES Customer ON DELETE CASCADE);",
                "CREATE VIEW Apartment_Rating AS (SELECT ID, AVG(rating) AS average_rating FROM Reviewed GROUP BY ID);",
                "CREATE VIEW Customer_reservations AS SELECT C.Customer_id, C.Customer_name, COUNT(R.start_date) AS num_reservations FROM Customer C LEFT OUTER JOIN Reserved R ON C.Customer_id = R.Customer_id GROUP BY C.Customer_id, C.Customer_name;",
-               "CREATE VIEW Apartment_VFM_scores AS SELECT RS.ID, AVG(RV.rating / (RS.total_price / (RS.end_date - RS.start_date))) AS avg_score FROM Reserved RS JOIN Reviewed RV ON RS.ID = RV.ID GROUP BY RS.ID"]
-
+               "CREATE VIEW Apartment_Average_price_per_night AS SELECT RS.ID, AVG(RS.total_price / (RS.end_date - RS.start_date)) as average_ppn FROM Reserved RS GROUP BY RS.ID",
+               "CREATE VIEW Apartment_VFM_scores AS SELECT R.ID, average_rating / average_ppn as score FROM Apartment_Rating R JOIN Apartment_Average_price_per_night PPN ON R.ID = PPN.ID"]
 
     conn = None
     try:
@@ -67,7 +67,8 @@ def drop_tables():
                "DROP TABLE Reviewed;",
                "DROP VIEW Apartment_rating;",
                "DROP VIEW Customer_reservations;",
-               "DROP VIEW Apartment_VFM_scores"]
+               "DROP VIEW Apartment_Average_price_per_night;",
+               "DROP VIEW Apartment_VFM_scores;"]
     queries.reverse()
 
     conn = None
@@ -663,24 +664,13 @@ def get_all_location_owners() -> List[Owner]:
 
 def best_value_for_money() -> Apartment:
     # value for money of a given apartment is calculated as follows:
-    # the regular average of all review scores
-
-    # review score is calculated as follows:
-    # rating / [total_price / (end_date - start_date)]
+    # (average of all the ratings of that apartment) / (average of all reservations prices per night)
 
     # idea:
-    # create view of reservations and their reviews, group this by apartment, and aggregate to average.
-
-    # CREATE VIEW Apartment_VFM_scores AS
-    # SELECT RS.ID, AVG(RV.rating / (RS.total_price / (RS.end_date - RS.start_date))) AS avg_score
-    # FROM Reserved RS JOIN Reviewed RV ON RS.ID = RV.ID
-    # GROUP BY RS.ID
-
-    # "SELECT ID, Address, City, Country, Size   " +
-    # "FROM Apartment A JOIN Apartment_VFM_scores S ON A.ID = S.ID" +
-    # "WHERE avg_score = (SELECT MAX(avg_score) FROM Apartment_VFM_scores) " +
-    # "ORDER BY A.ID " +
-    # "LIMIT 1;"
+    # create view of average ratings of apartments -- *exists* from previous functions (Apartment_Rating)
+    # create view of average price per night of apartments                             (Apartment_Average_price_per_night)
+    # create view for scores of apartments                                             (Apartment_VFM_scores)
+    # query for the apartment that maximizes (average rating / average PPN)
 
     apartment = Apartment.bad_apartment()
 
@@ -690,7 +680,7 @@ def best_value_for_money() -> Apartment:
 
         query = sql.SQL("SELECT A.ID, Address, City, Country, Size " +
                         "FROM Apartment A JOIN Apartment_VFM_scores S ON A.ID = S.ID " +
-                        "WHERE avg_score = (SELECT MAX(avg_score) FROM Apartment_VFM_scores) " +
+                        "WHERE score = (SELECT MAX(score) FROM Apartment_VFM_scores) " +
                         "ORDER BY A.ID " +
                         "LIMIT 1;").format()
 
