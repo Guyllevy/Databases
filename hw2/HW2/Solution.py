@@ -668,8 +668,8 @@ def best_value_for_money() -> Apartment:
 
     # idea:
     # create view of average ratings of apartments -- *exists* from previous functions (Apartment_Rating)
-    # create view of average price per night of apartments                             (Apartment_Average_price_per_night)
-    # create view for scores of apartments                                             (Apartment_VFM_scores)
+    # create view of average price per night of apartments                           (Apartment_Average_price_per_night)
+    # create view for scores of apartments                                           (Apartment_VFM_scores)
     # query for the apartment that maximizes (average rating / average PPN)
 
     apartment = Apartment.bad_apartment()
@@ -703,5 +703,44 @@ def profit_per_month(year: int) -> List[Tuple[int, float]]:
 
 
 def get_apartment_recommendation(customer_id: int) -> List[Tuple[Apartment, float]]:
-    # TODO: implement
+
+    # say C is the customer we want to give recommendations to.
+    # for every customer which is not C.
+    # if they have a common apartment which they rated : we consider the ratio (average of ratios) of their ratings
+    #
+    #
+    #
+    # a1 -> reviewed by C - 10, c2 - 5, c3 - 7
+    # a2 -> reviewed by C - 7, c2 - 6, c4 - 9
+    # a3 -> reviewed by        c2 - 4, c3 - 6,
+    # a4 -> reviewed by        c4 - 1
+    #
+    # C / c2 = avg(10/5, 7/6) = 1.5833
+    # C / c3 = 10/7
+    # C / c4 = 7/9
+    #
+    # approximate C on a3 : average( (10/7)*6 , 1.5833*4)
+    # approximate C on a4 : (7/9)*1
+
+    # idea:
+    # view (Rating_Ratios) of customer pairs that have reviewed
+    # a common apartment, and the (average) ratio of their ratings
+    #
+    # query apartment A, customer CO, Other_rating OT such that C,CO in Rating_Ratios and CO rated A as rating OT
+    # calculate for each row the approx from A,CO,OT of the rating C would give A (i.e. OT * ratio)
+    # group by apartments to average those approximations
+
+    # CREATE VIEW Rating_Ratios AS
+    # SELECT R1.ID AS cid1 , R2.ID AS cid2, AVG(R1.rating/R2.rating) AS ratio
+    # FROM Reviewed R1 JOIN Reviewed R2 ON R1.ID = R2.ID
+    # GROUP BY R1.ID, R2.ID
+    #
+    # query ({Customer_id})
+    # SELECT A.ID, AVG(RR.ratio * RE.rating) AS approx
+    # FROM Rating_Ratios RR JOIN Reviewed RE ON RR.cid2 = RE.Customer_id  ##(cid1,cid2,ratio),(Customer_id,ID,rating)
+    # WHERE RE.Customer_id != {Customer_id}
+    # AND EXISTS (SELECT * FROM Rating_Ratios AS RR WHERE RR.C1 = {Customer_id})
+    # GROUP BY A.ID
+    #
+
     pass
