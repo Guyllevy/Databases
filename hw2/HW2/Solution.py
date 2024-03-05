@@ -24,7 +24,7 @@ def create_tables():
                "CREATE VIEW Customer_reservations AS SELECT C.Customer_id, C.Customer_name, COUNT(R.start_date) AS num_reservations FROM Customer C LEFT OUTER JOIN Reserved R ON C.Customer_id = R.Customer_id GROUP BY C.Customer_id, C.Customer_name;",
                "CREATE VIEW Apartment_Average_price_per_night AS SELECT RS.ID, AVG(RS.total_price / (RS.end_date - RS.start_date)) as average_ppn FROM Reserved RS GROUP BY RS.ID",
                "CREATE VIEW Apartment_VFM_scores AS SELECT R.ID, average_rating / average_ppn as score FROM Apartment_Rating R JOIN Apartment_Average_price_per_night PPN ON R.ID = PPN.ID",
-               "CREATE VIEW Rating_Ratios AS SELECT R1.Customer_id AS cid1 , R2.Customer_id AS cid2, AVG(R1.rating/R2.rating) AS ratio FROM Reviewed R1, Reviewed R2 WHERE R1.Customer_id != R2.Customer_id AND R1.ID = R2.ID GROUP BY R1.Customer_id, R2.Customer_id"]
+               "CREATE VIEW Rating_Ratios AS SELECT R1.Customer_id AS cid1 , R2.Customer_id AS cid2, AVG(CAST(R1.rating AS float)/R2.rating) AS ratio FROM Reviewed R1, Reviewed R2 WHERE R1.Customer_id != R2.Customer_id AND R1.ID = R2.ID GROUP BY R1.Customer_id, R2.Customer_id"]
 
     conn = None
     try:
@@ -712,48 +712,39 @@ def get_apartment_recommendation(customer_id: int) -> List[Tuple[Apartment, floa
     # then for every apartment A not already reviewed by C, but reviewed by some other customer with now known ratio,
     # we approximate the rating of A using costumer OC by multiplying OC_rating by the ratio C/OC
     # this potentially gives multiple approximations per apartment, so we average over that.
-    #
-    # example:
-    # a1 -> reviewed by C - 10, c2 - 5, c3 - 7
-    # a2 -> reviewed by C - 7, c2 - 6, c4 - 9
-    # a3 -> reviewed by        c2 - 4, c3 - 6,
-    # a4 -> reviewed by        c4 - 1
-    #
-    # C / c2 = avg(10/5, 7/6) = 1.5833
-    # C / c3 = 10/7
-    # C / c4 = 7/9
-    #
-    # approximate C on a3 : average( (10/7)*6 , 1.5833*4)
-    # approximate C on a4 : (7/9)*1
 
-    # idea:
-    # view (Rating_Ratios) of customer pairs that have reviewed
+    # define view (Rating_Ratios) of customer pairs that have reviewed
     # a common apartment, and the (average) ratio of their ratings
-    #
 
     # CREATE VIEW Rating_Ratios AS
-    # SELECT R1.Customer_id AS cid1 , R2.Customer_id AS cid2, AVG(R1.rating/R2.rating) AS ratio
+    # SELECT R1.Customer_id AS cid1 , R2.Customer_id AS cid2, AVG(CAST(R1.rating AS float)/R2.rating) AS ratio
     # FROM Reviewed R1, Reviewed R2
     # WHERE R1.Customer_id != R2.Customer_id AND R1.ID = R2.ID
     # GROUP BY R1.Customer_id, R2.Customer_id
     #
     # query ({Customer_id})
-    # SELECT A.ID, Address, City, Country, Size, AVG(GREATEST(LEAST(RR.ratio * RE.rating, 10), 1)) AS approx
-    # FROM Apartment A
-    # JOIN Reviewed RE ON A.ID = RE.ID
-    # JOIN Rating_Ratios RR ON RR.cid2 = RE.Customer_id
-    # WHERE RR.cid1 = {Customer_id}
-    # AND EXISTS (SELECT * FROM Rating_Ratios WHERE cid1 = {Customer_id})
-    # AND RE.Customer_id != {Customer_id}
-    # GROUP BY A.ID, Address, City, Country, Size
+    # "SELECT A.ID AS ID, Address, City, Country, Size, " +
+    # "AVG(GREATEST(LEAST(RR.ratio * RE.rating, 10), 1)) AS approx " +
+    # "FROM Apartment A " +
+    # "JOIN Reviewed RE ON A.ID = RE.ID " +
+    # "JOIN Rating_Ratios RR ON RR.cid2 = RE.Customer_id " +
+    # "WHERE RR.cid1 = {Customer_id} " +
+    # "AND NOT EXISTS (SELECT * FROM Reviewed WHERE ID = A.ID AND Customer_id = {Customer_id}) " +
+    # "GROUP BY A.ID, Address, City, Country, Size"
     #
     # the join looks like (cid1, cid2, ratio, rating, apartment)
-    # where cid1 is our customer of interest
-    #       cid2 is all customers which we have a ratio for
-    #           and reviewed an apartment (which is not already reviewed by cid1?) -- check
-    #       apartment is that an apartment that cid2 reviewed
-    #       ratio is the average ratio cid1/cid2 ratings
-    #       rating is the rating of apartment by cid2
+    # cid1 is our customer of interest,
+    # cid2 is all customers which we have a ratio for and reviewed an apartment (which is not already reviewed by cid1),
+    # apartment is that an apartment that cid2 reviewed
+    # ratio is the average ratio cid1/cid2 ratings
+    # rating is the rating of apartment by cid2
+    #
+    # where:
+    # cid1 is (as we said) our customer of interest,
+    # the apartment shown were NOT reviewed by cid1 already,
+    #
+    # group by apartment and average the approximations for each cid2-given information
+
     result_list = []
     conn = None
     try:
@@ -765,8 +756,7 @@ def get_apartment_recommendation(customer_id: int) -> List[Tuple[Apartment, floa
                         "JOIN Reviewed RE ON A.ID = RE.ID " +
                         "JOIN Rating_Ratios RR ON RR.cid2 = RE.Customer_id " +
                         "WHERE RR.cid1 = {Customer_id} " +
-                        "AND EXISTS (SELECT * FROM Rating_Ratios WHERE cid1 = {Customer_id}) " +
-                        "AND RE.Customer_id != {Customer_id} " +
+                        "AND NOT EXISTS (SELECT * FROM Reviewed WHERE ID = A.ID AND Customer_id = {Customer_id}) " +
                         "GROUP BY A.ID, Address, City, Country, Size").format(Customer_id=sql.Literal(customer_id))
 
         _, result = conn.execute(query)
