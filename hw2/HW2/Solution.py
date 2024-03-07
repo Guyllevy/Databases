@@ -24,7 +24,11 @@ def create_tables():
                "CREATE VIEW Customer_reservations AS SELECT C.Customer_id, C.Customer_name, COUNT(R.start_date) AS num_reservations FROM Customer C LEFT OUTER JOIN Reserved R ON C.Customer_id = R.Customer_id GROUP BY C.Customer_id, C.Customer_name;",
                "CREATE VIEW Apartment_Average_price_per_night AS SELECT RS.ID, AVG(RS.total_price / (RS.end_date - RS.start_date)) as average_ppn FROM Reserved RS GROUP BY RS.ID",
                "CREATE VIEW Apartment_VFM_scores AS SELECT R.ID, average_rating / average_ppn as score FROM Apartment_Rating R JOIN Apartment_Average_price_per_night PPN ON R.ID = PPN.ID",
-               "CREATE VIEW Rating_Ratios AS SELECT R1.Customer_id AS cid1 , R2.Customer_id AS cid2, AVG(CAST(R1.rating AS float)/R2.rating) AS ratio FROM Reviewed R1, Reviewed R2 WHERE R1.Customer_id != R2.Customer_id AND R1.ID = R2.ID GROUP BY R1.Customer_id, R2.Customer_id"]
+               "CREATE VIEW Rating_Ratios AS SELECT R1.Customer_id AS cid1 , R2.Customer_id AS cid2, AVG(CAST(R1.rating AS float)/R2.rating) AS ratio FROM Reviewed R1, Reviewed R2 WHERE R1.Customer_id != R2.Customer_id AND R1.ID = R2.ID GROUP BY R1.Customer_id, R2.Customer_id",
+               # adi
+               "CREATE VIEW Owner_cities_count AS (SELECT O.Owner_id, O.Owner_name, COUNT(DISTINCT A.City) AS num_cities FROM (Owner O LEFT OUTER JOIN Owns OW ON O.Owner_id = OW.Owner_id) LEFT OUTER JOIN Apartment A ON OW.id = A.id GROUP BY O.Owner_id, O.Owner_name);",
+               "CREATE VIEW Months AS SELECT 1 AS Month UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9 UNION SELECT 10 UNION SELECT 11 UNION SELECT 12;"]
+    # "CREATE VIEW Apartments_profit_in_year_and_month AS SELECT R.end_date.year AS Year, R.end_date.month AS Month, SUM(R.total_price) * 0.15 AS profit FROM Reserved R GROUP BY Year, Month;"
 
     conn = None
     try:
@@ -70,7 +74,11 @@ def drop_tables():
                "DROP VIEW Customer_reservations;",
                "DROP VIEW Apartment_Average_price_per_night;",
                "DROP VIEW Apartment_VFM_scores;",
-               "DROP VIEW Rating_Ratios;"]
+               "DROP VIEW Rating_Ratios;",
+               # adi,
+               "DROP VIEW Owner_cities_count;",
+               "DROP VIEW Months;"]
+             #  "DROP VIEW Apartments_profit_in_year_and_month;"]
     queries.reverse()
 
     conn = None
@@ -660,8 +668,33 @@ def reservations_per_owner() -> List[Tuple[str, int]]:
 # ---------------------------------- ADVANCED API: ----------------------------------
 
 def get_all_location_owners() -> List[Owner]:
-    # TODO: implement
-    pass
+    # get all location owners
+    # in order for that we need to know all the cities where there are apartments
+    # and to check on each Owner for each city if he owns an apartment there
+    # will to that by counting all the cities and count all owner's cities and comparing them.
+
+    owners_list = []
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+
+        query = sql.SQL("SELECT Owner_id, Owner_name " +
+                        "FROM Owner_cities_count " +
+                        "WHERE num_cities = " +
+                        "(SELECT COUNT(DISTINCT City) " +
+                        "FROM Apartment);").format()
+
+        _, result = conn.execute(query)
+        if result.size() > 0:
+            owners_list = [Owner(**owner) for owner in result]
+
+    except Exception as e:
+        print(e)
+
+    finally:
+        conn.close()
+    return owners_list
 
 
 def best_value_for_money() -> Apartment:
@@ -700,8 +733,34 @@ def best_value_for_money() -> Apartment:
 
 
 def profit_per_month(year: int) -> List[Tuple[int, float]]:
-    # TODO: implement
-    pass
+
+    start_year_date = date(year, 1, 1)
+    end_year_date = date(year, 12, 31)
+
+    profit_list = []
+
+    conn = None
+    try:
+        conn = Connector.DBConnector()
+
+        query = sql.SQL("SELECT M.month AS month, COALESCE((SUM(R.total_price) * 0.15), 0) AS app_profit FROM Months.M " +
+                        "Apartment A LEFT OUTER JOIN Reserved R ON A.ID = R.ID " +
+                        "WHERE (R.end_date BETWEEN {start_year_date} AND {end_year_date}) " +
+                        "OR (R.end_date IS NULL) " +
+                        "GROUP BY A.ID").format(
+                            start_year_date=sql.Literal(start_year_date.strftime('%Y-%m-%d')),
+                            end_year_date=sql.Literal(end_year_date.strftime('%Y-%m-%d')))
+
+        _, result = conn.execute(query)
+        if result.size() > 0:
+            profit_list = [(res["app_id"], res["app_profit_per_month"]) for res in result]
+
+    except Exception as e:
+        print(e)
+
+    finally:
+        conn.close()
+    return profit_list
 
 
 def get_apartment_recommendation(customer_id: int) -> List[Tuple[Apartment, float]]:
@@ -713,25 +772,11 @@ def get_apartment_recommendation(customer_id: int) -> List[Tuple[Apartment, floa
     # we approximate the rating of A using costumer OC by multiplying OC_rating by the ratio C/OC
     # this potentially gives multiple approximations per apartment, so we average over that.
 
-    # define view (Rating_Ratios) of customer pairs that have reviewed
+    # view (Rating_Ratios):
+    # view of customer pairs that have reviewed
     # a common apartment, and the (average) ratio of their ratings
-
-    # CREATE VIEW Rating_Ratios AS
-    # SELECT R1.Customer_id AS cid1 , R2.Customer_id AS cid2, AVG(CAST(R1.rating AS float)/R2.rating) AS ratio
-    # FROM Reviewed R1, Reviewed R2
-    # WHERE R1.Customer_id != R2.Customer_id AND R1.ID = R2.ID
-    # GROUP BY R1.Customer_id, R2.Customer_id
     #
-    # query ({Customer_id})
-    # "SELECT A.ID AS ID, Address, City, Country, Size, " +
-    # "AVG(GREATEST(LEAST(RR.ratio * RE.rating, 10), 1)) AS approx " +
-    # "FROM Apartment A " +
-    # "JOIN Reviewed RE ON A.ID = RE.ID " +
-    # "JOIN Rating_Ratios RR ON RR.cid2 = RE.Customer_id " +
-    # "WHERE RR.cid1 = {Customer_id} " +
-    # "AND NOT EXISTS (SELECT * FROM Reviewed WHERE ID = A.ID AND Customer_id = {Customer_id}) " +
-    # "GROUP BY A.ID, Address, City, Country, Size"
-    #
+    # main query:
     # the join looks like (cid1, cid2, ratio, rating, apartment)
     # cid1 is our customer of interest,
     # cid2 is all customers which we have a ratio for and reviewed an apartment (which is not already reviewed by cid1),
@@ -743,7 +788,8 @@ def get_apartment_recommendation(customer_id: int) -> List[Tuple[Apartment, floa
     # cid1 is (as we said) our customer of interest,
     # the apartment shown were NOT reviewed by cid1 already,
     #
-    # group by apartment and average the approximations for each cid2-given information
+    # group by: apartment
+    # and average the approximations for each cid2-given information (each of which we make sure is between 1 and 10)
 
     result_list = []
     conn = None
@@ -774,6 +820,7 @@ def get_apartment_recommendation(customer_id: int) -> List[Tuple[Apartment, floa
     return result_list
 
 
+# print table for debugging purposes.
 def get_table(query_string) -> None:
     conn = Connector.DBConnector()
     query = sql.SQL(query_string).format()
