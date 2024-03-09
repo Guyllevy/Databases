@@ -26,9 +26,8 @@ def create_tables():
                "CREATE VIEW Apartment_VFM_scores AS SELECT R.ID, average_rating / average_ppn as score FROM Apartment_Rating R JOIN Apartment_Average_price_per_night PPN ON R.ID = PPN.ID",
                "CREATE VIEW Rating_Ratios AS SELECT R1.Customer_id AS cid1 , R2.Customer_id AS cid2, AVG(CAST(R1.rating AS float)/R2.rating) AS ratio FROM Reviewed R1, Reviewed R2 WHERE R1.Customer_id != R2.Customer_id AND R1.ID = R2.ID GROUP BY R1.Customer_id, R2.Customer_id",
                # adi
-               "CREATE VIEW Owner_cities_count AS (SELECT O.Owner_id, O.Owner_name, COUNT(DISTINCT A.City) AS num_cities FROM (Owner O LEFT OUTER JOIN Owns OW ON O.Owner_id = OW.Owner_id) LEFT OUTER JOIN Apartment A ON OW.id = A.id GROUP BY O.Owner_id, O.Owner_name);",
-               "CREATE VIEW Months AS SELECT 1 AS Month UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9 UNION SELECT 10 UNION SELECT 11 UNION SELECT 12;"]
-    # "CREATE VIEW Apartments_profit_in_year_and_month AS SELECT R.end_date.year AS Year, R.end_date.month AS Month, SUM(R.total_price) * 0.15 AS profit FROM Reserved R GROUP BY Year, Month;"
+               "CREATE VIEW Owner_cities_count AS (SELECT O.Owner_id, O.Owner_name, COUNT(DISTINCT A.City) AS num_cities FROM (Owner O LEFT OUTER JOIN Owns OW ON O.Owner_id = OW.Owner_id) LEFT OUTER JOIN Apartment A ON OW.id = A.id GROUP BY O.Owner_id, O.Owner_name);"]
+
 
     conn = None
     try:
@@ -76,9 +75,8 @@ def drop_tables():
                "DROP VIEW Apartment_VFM_scores;",
                "DROP VIEW Rating_Ratios;",
                # adi,
-               "DROP VIEW Owner_cities_count;",
-               "DROP VIEW Months;"]
-             #  "DROP VIEW Apartments_profit_in_year_and_month;"]
+               "DROP VIEW Owner_cities_count;"]
+
     queries.reverse()
 
     conn = None
@@ -734,26 +732,30 @@ def best_value_for_money() -> Apartment:
 
 def profit_per_month(year: int) -> List[Tuple[int, float]]:
 
-    start_year_date = date(year, 1, 1)
-    end_year_date = date(year, 12, 31)
+    # the app’s profit from a reservation is 15% from the total price. The function should
+    # return the profit per month in the specified year, including months where no profit was
+    # made. The month of the reservation should be determined by the end_date.
 
     profit_list = []
-
     conn = None
     try:
         conn = Connector.DBConnector()
 
-        query = sql.SQL("SELECT M.month AS month, COALESCE((SUM(R.total_price) * 0.15), 0) AS app_profit FROM Months.M " +
-                        "Apartment A LEFT OUTER JOIN Reserved R ON A.ID = R.ID " +
-                        "WHERE (R.end_date BETWEEN {start_year_date} AND {end_year_date}) " +
-                        "OR (R.end_date IS NULL) " +
-                        "GROUP BY A.ID").format(
-                            start_year_date=sql.Literal(start_year_date.strftime('%Y-%m-%d')),
-                            end_year_date=sql.Literal(end_year_date.strftime('%Y-%m-%d')))
+        query = sql.SQL("SELECT EXTRACT(MONTH FROM RS.end_date) AS month, SUM(total_price)*0.15 AS profit " +
+                        "FROM ("
+                        "(SELECT * FROM Reserved WHERE EXTRACT(YEAR FROM end_date) = {year}) " +
+                        "UNION " +
+                        "(SELECT 0 AS Customer_id, 0 AS ID, DATE('{year}-01-01') AS start_date, generate_series(DATE('{year}-01-01'), DATE('{year}-12-01'), '1 month') AS end_date, 0 AS total_price)" +
+                        ") RS " +
+                        "GROUP BY EXTRACT(MONTH FROM RS.end_date) "
+                        "ORDER BY EXTRACT(MONTH FROM RS.end_date)").format(year=sql.Literal(year))
 
         _, result = conn.execute(query)
-        if result.size() > 0:
-            profit_list = [(res["app_id"], res["app_profit_per_month"]) for res in result]
+
+        if result.size() >= 1:
+            for row in result:
+                profit_list.append(
+                    ((row["month"]), row["profit"]))
 
     except Exception as e:
         print(e)
@@ -761,6 +763,9 @@ def profit_per_month(year: int) -> List[Tuple[int, float]]:
     finally:
         conn.close()
     return profit_list
+
+
+
 
 
 def get_apartment_recommendation(customer_id: int) -> List[Tuple[Apartment, float]]:
@@ -825,7 +830,9 @@ def get_table(query_string) -> None:
     conn = Connector.DBConnector()
     query = sql.SQL(query_string).format()
     _, result = conn.execute(query)
-
+    if result.size() < 1:
+        print("result given to get_table is none")
+        return
     for field in result[0]:
         print(field, end=" - ")
     print()
