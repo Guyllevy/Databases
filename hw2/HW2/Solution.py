@@ -20,7 +20,7 @@ def create_tables():
                "CREATE TABLE Owns(Owner_ID INTEGER, ID INTEGER, PRIMARY KEY(ID) ,FOREIGN KEY(ID) REFERENCES Apartment(ID) ON DELETE CASCADE, FOREIGN KEY(Owner_ID) REFERENCES Owner ON DELETE CASCADE);",
                "CREATE TABLE Reserved(Customer_ID INTEGER, ID INTEGER, start_date DATE, end_date DATE, total_price FLOAT, FOREIGN KEY(ID) REFERENCES Apartment ON DELETE CASCADE, FOREIGN KEY(Customer_ID) REFERENCES Customer ON DELETE CASCADE);",
                "CREATE TABLE Reviewed(ID INTEGER, Customer_ID INTEGER, review_date DATE, rating INTEGER, review_text TEXT, PRIMARY KEY(ID, Customer_ID), FOREIGN KEY(ID) REFERENCES Apartment ON DELETE CASCADE, FOREIGN KEY(Customer_ID) REFERENCES Customer ON DELETE CASCADE);",
-               "CREATE VIEW Apartment_Rating AS (SELECT ID, AVG(rating) AS average_rating FROM Reviewed GROUP BY ID);",
+               "CREATE VIEW Apartment_Rating AS SELECT A.ID, AVG(COALESCE(rating, 0)) AS average_rating FROM Apartment A LEFT OUTER JOIN Reviewed R ON A.ID = R.ID GROUP BY A.ID;",
                "CREATE VIEW Customer_reservations AS SELECT C.Customer_id, C.Customer_name, COUNT(R.start_date) AS num_reservations FROM Customer C LEFT OUTER JOIN Reserved R ON C.Customer_id = R.Customer_id GROUP BY C.Customer_id, C.Customer_name;",
                "CREATE VIEW Apartment_Average_price_per_night AS SELECT RS.ID, AVG(RS.total_price / (RS.end_date - RS.start_date)) as average_ppn FROM Reserved RS GROUP BY RS.ID",
                "CREATE VIEW Apartment_VFM_scores AS SELECT R.ID, average_rating / average_ppn as score FROM Apartment_Rating R JOIN Apartment_Average_price_per_night PPN ON R.ID = PPN.ID",
@@ -161,6 +161,8 @@ def add_apartment(apartment: Apartment) -> ReturnValue:
     # checks
     if None in [apartment.get_id(), apartment.get_address(),
                 apartment.get_city(), apartment.get_country(), apartment.get_size()]:
+        return ReturnValue.BAD_PARAMS
+    elif apartment.get_size() <= 0:
         return ReturnValue.BAD_PARAMS
 
     conn = None
@@ -311,10 +313,8 @@ def customer_made_reservation(customer_id: int, apartment_id: int, start_date: d
         query = sql.SQL("INSERT INTO Reserved " +
                         "SELECT {customer_id}, {apartment_id}, {start_date}, {end_date}, {total_price} " +
                         "WHERE NOT EXISTS (SELECT 1 FROM Reserved AS R " +
-                        "WHERE R.id = {apartment_id} AND (" +
-                        "(R.start_date BETWEEN {start_date} AND {end_date}) " +
-                        "OR (R.end_date BETWEEN {start_date} AND {end_date}) " +
-                        "OR (R.start_date < {start_date} AND R.end_date > {end_date})));").format(
+                        "WHERE R.id = {apartment_id} AND " +
+                        "(R.start_date, R.end_date) OVERLAPS ({start_date}, {end_date}))").format(
             customer_id=sql.Literal(customer_id),
             apartment_id=sql.Literal(apartment_id),
             start_date=sql.Literal(start_date.strftime('%Y-%m-%d')),
@@ -373,7 +373,7 @@ def customer_reviewed_apartment(customer_id: int, apartment_id: int, review_date
                         "SELECT {apartment_id}, {customer_id}, {review_date}, {rating}, {review_text} " +
                         "WHERE EXISTS (SELECT 1 FROM Reserved AS R " +
                         "WHERE R.id = {apartment_id} AND R.Customer_ID = {customer_id} " +
-                        "AND R.end_date < {review_date})").format(
+                        "AND R.end_date <= {review_date})").format(
                             customer_id=sql.Literal(customer_id),
                             apartment_id=sql.Literal(apartment_id),
                             review_date=sql.Literal(review_date.strftime('%Y-%m-%d')),
@@ -414,7 +414,7 @@ def customer_updated_review(customer_id: int, apartment_id: int, update_date: da
         query = sql.SQL("UPDATE Reviewed " +
                         "SET review_date = {update_date}, rating = {new_rating}, review_text = {new_text} " +
                         "WHERE id = {apartment_id} AND Customer_ID = {customer_id} " +
-                        "AND review_date < {update_date}").format(
+                        "AND review_date <= {update_date}").format(
                             customer_id=sql.Literal(customer_id),
                             apartment_id=sql.Literal(apartment_id),
                             update_date=sql.Literal(update_date.strftime('%Y-%m-%d')),
@@ -466,7 +466,7 @@ def owner_owns_apartment(owner_id: int, apartment_id: int) -> ReturnValue:
         conn.close()
     return ReturnValue.OK
 
-def owner_doesnt_own_apartment(owner_id: int, apartment_id: int) -> ReturnValue:
+def owner_drops_apartment(owner_id: int, apartment_id: int) -> ReturnValue:
     if owner_id <= 0 or apartment_id <= 0 or owner_id is None or apartment_id is None:
         return ReturnValue.BAD_PARAMS
 
@@ -566,11 +566,9 @@ def get_apartment_rating(apartment_id: int) -> float:
                         apartment_id=sql.Literal(apartment_id))
 
         _, result = conn.execute(query)
-        print("Came Here")
-        print(result)
+
         if result.size() == 1:
             average = result[0]["average_rating"]
-            print("Came Here")
 
     except Exception as e:
         print(e)
@@ -590,7 +588,7 @@ def get_owner_rating(owner_id: int) -> float:
     try:
         conn = Connector.DBConnector()
 
-        query = sql.SQL("SELECT AVG(average_rating) AS owner_rating FROM Apartment_Rating AR " +
+        query = sql.SQL("SELECT COALESCE(AVG(average_rating),0) AS owner_rating FROM Apartment_Rating AR " +
                         "WHERE EXISTS (SELECT 1 FROM Owns " +
                         "WHERE id = AR.id AND owner_id = {owner_id})").format(
                         owner_id=sql.Literal(owner_id))
