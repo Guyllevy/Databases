@@ -24,9 +24,9 @@ def create_tables():
                "CREATE VIEW Customer_reservations AS SELECT C.Customer_id, C.Customer_name, COUNT(R.start_date) AS num_reservations FROM Customer C LEFT OUTER JOIN Reserved R ON C.Customer_id = R.Customer_id GROUP BY C.Customer_id, C.Customer_name;",
                "CREATE VIEW Apartment_Average_price_per_night AS SELECT RS.ID, AVG(RS.total_price / (RS.end_date - RS.start_date)) as average_ppn FROM Reserved RS GROUP BY RS.ID",
                "CREATE VIEW Apartment_VFM_scores AS SELECT R.ID, average_rating / average_ppn as score FROM Apartment_Rating R JOIN Apartment_Average_price_per_night PPN ON R.ID = PPN.ID",
-               "CREATE VIEW Rating_Ratios AS SELECT R1.Customer_id AS cid1 , R2.Customer_id AS cid2, AVG(CAST(R1.rating AS float)/R2.rating) AS ratio FROM Reviewed R1, Reviewed R2 WHERE R1.Customer_id != R2.Customer_id AND R1.ID = R2.ID GROUP BY R1.Customer_id, R2.Customer_id",
+               "CREATE VIEW Rating_Ratios AS SELECT R1.Customer_id AS cid1 , R2.Customer_id AS cid2, AVG(CAST(R1.rating AS decimal)/R2.rating) AS ratio FROM Reviewed R1, Reviewed R2 WHERE R1.Customer_id != R2.Customer_id AND R1.ID = R2.ID GROUP BY R1.Customer_id, R2.Customer_id",
                # adi
-               "CREATE VIEW Owner_cities_count AS (SELECT O.Owner_id, O.Owner_name, COUNT(DISTINCT A.City) AS num_cities FROM (Owner O LEFT OUTER JOIN Owns OW ON O.Owner_id = OW.Owner_id) LEFT OUTER JOIN Apartment A ON OW.id = A.id GROUP BY O.Owner_id, O.Owner_name);"]
+               "CREATE VIEW Owner_cities_count AS (SELECT O.Owner_id, O.Owner_name, COUNT(DISTINCT (A.City, A.Country)) AS num_cities FROM (Owner O LEFT OUTER JOIN Owns OW ON O.Owner_id = OW.Owner_id) LEFT OUTER JOIN Apartment A ON OW.id = A.id GROUP BY O.Owner_id, O.Owner_name);"]
 
 
     conn = None
@@ -302,8 +302,9 @@ def delete_customer(customer_id: int) -> ReturnValue:
 
 def customer_made_reservation(customer_id: int, apartment_id: int, start_date: date, end_date: date,
                               total_price: float) -> ReturnValue:
-    if customer_id <= 0 or customer_id is None or apartment_id <= 0 or apartment_id is None or total_price <= 0 \
-            or start_date is None or end_date is None or total_price is None:
+    # TODO: maybe remove checks customer_id > 0 and apartment_id > 0 because of piazza question number @54
+    if (customer_id is None or customer_id <= 0 or apartment_id is None or apartment_id <= 0 or total_price is None
+            or total_price <= 0 or start_date is None or end_date is None or end_date < start_date):
         return ReturnValue.BAD_PARAMS
 
     conn = None
@@ -361,8 +362,8 @@ def customer_cancelled_reservation(customer_id: int, apartment_id: int, start_da
 
 def customer_reviewed_apartment(customer_id: int, apartment_id: int, review_date: date, rating: int,
                                 review_text: str) -> ReturnValue:
-    if (customer_id <= 0 or apartment_id <= 0 or customer_id is None or apartment_id is None
-            or review_date is None or review_text is None or rating < 1 or rating > 10 or rating is None):
+    if (customer_id is None or customer_id <= 0 or apartment_id is None or apartment_id <= 0
+            or review_date is None or review_text is None or rating is None or rating < 1 or rating > 10):
         return ReturnValue.BAD_PARAMS
 
     conn = None
@@ -678,7 +679,7 @@ def get_all_location_owners() -> List[Owner]:
         query = sql.SQL("SELECT Owner_id, Owner_name " +
                         "FROM Owner_cities_count " +
                         "WHERE num_cities = " +
-                        "(SELECT COUNT(DISTINCT City) " +
+                        "(SELECT COUNT(DISTINCT (City, Country)) " +
                         "FROM Apartment);").format()
 
         _, result = conn.execute(query)
@@ -813,7 +814,7 @@ def get_apartment_recommendation(customer_id: int) -> List[Tuple[Apartment, floa
         if result.size() >= 1:
             for row in result:
                 result_list.append(
-                    (Apartment(row["ID"], row["Address"], row["City"], row["Country"], row["Size"]), row["approx"]))
+                    (Apartment(row["ID"], row["Address"], row["City"], row["Country"], row["Size"]), float(row["approx"])))
 
     except Exception as e:
         print(e)
