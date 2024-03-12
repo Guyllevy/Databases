@@ -807,7 +807,8 @@ def get_apartment_recommendation(customer_id: int) -> List[Tuple[Apartment, floa
                         "JOIN Rating_Ratios RR ON RR.cid2 = RE.Customer_id " +
                         "WHERE RR.cid1 = {Customer_id} " +
                         "AND NOT EXISTS (SELECT * FROM Reviewed WHERE ID = A.ID AND Customer_id = {Customer_id}) " +
-                        "GROUP BY A.ID, Address, City, Country, Size").format(Customer_id=sql.Literal(customer_id))
+                        "GROUP BY A.ID, Address, City, Country, Size " +
+                        "ORDER BY A.ID").format(Customer_id=sql.Literal(customer_id))
 
         _, result = conn.execute(query)
 
