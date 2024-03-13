@@ -23,7 +23,7 @@ def create_tables():
                "CREATE VIEW Apartment_Rating AS SELECT A.ID, AVG(COALESCE(rating, 0)) AS average_rating FROM Apartment A LEFT OUTER JOIN Reviewed R ON A.ID = R.ID GROUP BY A.ID;",
                "CREATE VIEW Customer_reservations AS SELECT C.Customer_id, C.Customer_name, COUNT(R.start_date) AS num_reservations FROM Customer C LEFT OUTER JOIN Reserved R ON C.Customer_id = R.Customer_id GROUP BY C.Customer_id, C.Customer_name;",
                "CREATE VIEW Apartment_Average_price_per_night AS SELECT RS.ID, AVG(RS.total_price / (RS.end_date - RS.start_date)) as average_ppn FROM Reserved RS GROUP BY RS.ID",
-               "CREATE VIEW Apartment_VFM_scores AS SELECT R.ID, average_rating / average_ppn as score FROM Apartment_Rating R JOIN Apartment_Average_price_per_night PPN ON R.ID = PPN.ID",
+               "CREATE VIEW Apartment_VFM_scores AS SELECT R.ID, COALESCE(average_rating / average_ppn, 0) as score FROM Apartment_Rating R LEFT OUTER JOIN Apartment_Average_price_per_night PPN ON R.ID = PPN.ID",
                "CREATE VIEW Rating_Ratios AS SELECT R1.Customer_id AS cid1 , R2.Customer_id AS cid2, AVG(CAST(R1.rating AS decimal)/R2.rating) AS ratio FROM Reviewed R1, Reviewed R2 WHERE R1.Customer_id != R2.Customer_id AND R1.ID = R2.ID GROUP BY R1.Customer_id, R2.Customer_id",
                # adi
                "CREATE VIEW Owner_cities_count AS (SELECT O.Owner_id, O.Owner_name, COUNT(DISTINCT (A.City, A.Country)) AS num_cities FROM (Owner O LEFT OUTER JOIN Owns OW ON O.Owner_id = OW.Owner_id) LEFT OUTER JOIN Apartment A ON OW.id = A.id GROUP BY O.Owner_id, O.Owner_name);"]
@@ -775,7 +775,7 @@ def get_apartment_recommendation(customer_id: int) -> List[Tuple[Apartment, floa
     # then for every apartment A not already reviewed by C, but reviewed by some other customer with now known ratio,
     # we approximate the rating of A using costumer OC by multiplying OC_rating by the ratio C/OC
     # this potentially gives multiple approximations per apartment, so we average over that.
-
+    #
     # view (Rating_Ratios):
     # view of customer pairs that have reviewed
     # a common apartment, and the (average) ratio of their ratings
